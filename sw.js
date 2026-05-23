@@ -1,4 +1,4 @@
-const CACHE = "buspass-v4";
+const CACHE = "buspass-v6";
 const SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,8 @@ const SHELL = [
   "./app.js",
   "./config.js",
   "./icons.js",
+  "./jsQR.js",
+  "./qrcode.js",
   "./manifest.json",
   "./tcs_black_new.png",
   "./icon-192.png",
@@ -30,14 +32,18 @@ self.addEventListener("fetch", (e) => {
 
   const url = new URL(req.url);
 
-  // Network-first for the QR generator (so QR refreshes when online), cache fallback when offline
-  if (url.hostname === "api.qrserver.com") {
+  // Stale-while-revalidate for Google Fonts (CSS + woff2 files) so they work offline after first visit
+  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
     e.respondWith(
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
-        return res;
-      }).catch(() => caches.match(req))
+      caches.open(CACHE).then((c) =>
+        c.match(req).then((hit) => {
+          const fetchPromise = fetch(req).then((res) => {
+            if (res && (res.ok || res.type === "opaque")) c.put(req, res.clone());
+            return res;
+          }).catch(() => hit);
+          return hit || fetchPromise;
+        })
+      )
     );
     return;
   }

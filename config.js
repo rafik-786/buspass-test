@@ -17,12 +17,14 @@ window.BusPassConfig = {
     { key: "status",    label: "Buspass Request Status", route: "#/upcoming",  icon: "navRequestStatus" },
     { key: "history",   label: "Bus Pass History",       route: "#/history",   icon: "navHistory" },
     { key: "renew",     label: "Renew Bus Pass",         route: "#/renew",     icon: "navHistory" },
+    { key: "scan",      label: "Scan QR",                route: "#/scan",      icon: "navScan" },
     { key: "settings",  label: "Settings",               route: "#/settings",  icon: "navSettings" },
     { key: "logout",    label: "Logout",                 route: "#/logout",    icon: "navLogout" }
   ],
 
   homeTiles: [
     { key: "buspass", label: "Bus Services",     route: "#/view-pass", icon: "tileBuspass", active: true  },
+    { key: "scan",    label: "Scan QR",          route: "#/scan",      icon: "tileScan",    active: true  },
     { key: "cab",     label: "Cab Services",     route: "",            icon: "tileCab",     active: false },
     { key: "geocode", label: "Geocode Yourself", route: "",            icon: "tileGeocode", active: false }
   ],

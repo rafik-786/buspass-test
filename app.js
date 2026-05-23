@@ -63,9 +63,54 @@
     });
   }
 
-  function qrImgUrl(data, size) {
-    return "https://api.qrserver.com/v1/create-qr-code/?size=" +
-           size + "x" + size + "&margin=0&data=" + encodeURIComponent(data);
+  function qrDataUrl(text) {
+    const qr = window.qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    return qr.createDataURL(8, 0);
+  }
+
+  async function aesDecryptBase64(b64) {
+    const bin = atob(b64);
+    const ct = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) ct[i] = bin.charCodeAt(i);
+    const key = await crypto.subtle.importKey(
+      "raw", enc.encode(cfg.qrCrypto.key),
+      { name: "AES-CBC" }, false, ["decrypt"]
+    );
+    const pt = await crypto.subtle.decrypt(
+      { name: "AES-CBC", iv: enc.encode(cfg.qrCrypto.iv) },
+      key, ct
+    );
+    return dec.decode(pt);
+  }
+
+  async function decodeQrText(raw) {
+    const out = { raw, decrypted: null, parsed: null };
+    if (!raw) return out;
+    try {
+      const plain = await aesDecryptBase64(raw.trim());
+      out.decrypted = plain;
+      try { out.parsed = JSON.parse(plain); } catch (_) {}
+    } catch (_) {}
+    return out;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[c]
+    );
+  }
+
+  function ensureJsQR() {
+    if (window.jsQR) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "jsQR.js";
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Failed to load jsQR.js"));
+      document.head.appendChild(s);
+    });
   }
 
   // ============ Router ============
@@ -77,6 +122,7 @@
     "#/renew":      renderRenew,
     "#/edit":       () => renderTripTypeChooser("Edit Bus Pass"),
     "#/apply":      () => renderTripTypeChooser("Apply Bus Pass"),
+    "#/scan":       renderScan,
     "#/settings":   renderSettings,
     "#/logout":     handleLogout
   };
@@ -88,6 +134,7 @@
   }
 
   function onRouteChange() {
+    stopActiveScan();
     const hash = window.location.hash || "#/home";
     const fn = routes[hash] || renderHome;
     const v = document.getElementById("view");
@@ -180,10 +227,10 @@
     const payload = buildQrPayload(p, cfg.employee);
     try {
       const enc = await aesEncryptBase64(payload);
-      document.getElementById("qrImg").src = qrImgUrl(enc, 360);
+      document.getElementById("qrImg").src = qrDataUrl(enc);
     } catch (e) {
       console.error("QR encryption failed:", e);
-      document.getElementById("qrImg").src = qrImgUrl(payload, 360);
+      document.getElementById("qrImg").src = qrDataUrl(payload);
     }
 
     let showingQR = true;
@@ -367,6 +414,169 @@
       showToast(`Trip type "${tripLabel}" selected — proceeding...`);
       setTimeout(() => navigate("#/renew"), 800);
     });
+  }
+
+  // ============ Scan QR ============
+  let _scanState = null;
+
+  function stopActiveScan() {
+    if (!_scanState) return;
+    _scanState.cancelled = true;
+    if (_scanState.raf) cancelAnimationFrame(_scanState.raf);
+    if (_scanState.stream) _scanState.stream.getTracks().forEach(t => t.stop());
+    _scanState = null;
+  }
+
+  function renderEtmsFields(p) {
+    const rows = [
+      ["Employee Name", p.empName],
+      ["Employee Code", p.empCode],
+      ["Employee Id",   p.empid],
+      ["Request Id",    p.requestId],
+      ["Bus Pass Type", p.busPassType],
+      ["Trip Type",     p.tripType],
+      ["Pick Timing",   p.pickTiming],
+      ["Drop Timing",   p.dropTiming],
+      ["Route Id",      p.routeId],
+      ["Bus Mgmt Id",   p.busmanagementId],
+      ["Timestamp",     p.timeStamp]
+    ];
+    return `<div class="scan-grid">` + rows.map(([k, v]) => `
+      <div class="scan-field">
+        <div class="scan-k">${k}</div>
+        <div class="scan-v">${escapeHtml(v == null ? "—" : String(v))}</div>
+      </div>
+    `).join("") + `</div>`;
+  }
+
+  async function renderScan() {
+    setTopBar({ title: "Scan QR", back: true });
+    const v = document.getElementById("view");
+    v.innerHTML = `
+      <section class="scan-card">
+        <div class="scan-viewport">
+          <video id="scanVideo" playsinline muted autoplay></video>
+          <div class="scan-reticle">
+            <span class="rc tl"></span><span class="rc tr"></span>
+            <span class="rc bl"></span><span class="rc br"></span>
+          </div>
+        </div>
+        <div class="scan-status" id="scanStatus">Requesting camera…</div>
+        <div class="scan-hint">Hold the QR code inside the frame.</div>
+      </section>
+      <canvas id="scanCanvas" style="display:none"></canvas>
+      <section class="scan-result" id="scanResult" hidden></section>
+    `;
+
+    const video  = document.getElementById("scanVideo");
+    const canvas = document.getElementById("scanCanvas");
+    const status = document.getElementById("scanStatus");
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status.textContent = "Camera not supported in this browser.";
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+    } catch (e) {
+      status.textContent =
+        e.name === "NotAllowedError"
+          ? "Camera permission denied. Enable it and try again."
+        : e.name === "NotFoundError"
+          ? "No camera found on this device."
+        : "Camera unavailable (" + e.name + "). HTTPS or localhost is required.";
+      return;
+    }
+    video.srcObject = stream;
+    try { await video.play(); } catch (_) {}
+
+    const state = { stream, cancelled: false, raf: null };
+    _scanState = state;
+    status.textContent = "Point the camera at a QR code…";
+
+    let detector = null;
+    if ("BarcodeDetector" in window) {
+      try { detector = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch (_) {}
+    }
+    if (!detector) {
+      status.textContent = "Loading decoder…";
+      try { await ensureJsQR(); }
+      catch { if (!state.cancelled) status.textContent = "Failed to load decoder."; return; }
+      if (state.cancelled) return;
+      status.textContent = "Point the camera at a QR code…";
+    }
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    let lastDecodeAt = 0;
+
+    async function tick() {
+      if (state.cancelled) return;
+      if (video.readyState < 2) { state.raf = requestAnimationFrame(tick); return; }
+
+      let text = null;
+      try {
+        if (detector) {
+          const codes = await detector.detect(video);
+          if (codes && codes.length) text = codes[0].rawValue;
+        } else {
+          // throttle jsQR to ~10 Hz — it's CPU-heavy
+          const now = performance.now();
+          if (now - lastDecodeAt > 100) {
+            lastDecodeAt = now;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+            if (code) text = code.data;
+          }
+        }
+      } catch (_) {}
+
+      if (text) { onDetected(text); return; }
+      state.raf = requestAnimationFrame(tick);
+    }
+    state.raf = requestAnimationFrame(tick);
+
+    async function onDetected(text) {
+      stopActiveScan();
+      const out = await decodeQrText(text);
+      const resultEl = document.getElementById("scanResult");
+      const statusEl = document.getElementById("scanStatus");
+      if (!resultEl) return;
+      const isEtms = !!out.parsed;
+      const kindLabel = isEtms ? "eTMS Bus Pass" : (out.decrypted ? "Decrypted (not JSON)" : "Raw QR");
+      const kindClass = isEtms ? "kind-etms" : (out.decrypted ? "kind-decrypted" : "kind-raw");
+      resultEl.hidden = false;
+      resultEl.innerHTML = `
+        <div class="scan-result-header">
+          <span class="scan-kind ${kindClass}">${kindLabel}</span>
+        </div>
+        ${isEtms
+          ? renderEtmsFields(out.parsed)
+          : `<pre class="scan-text">${escapeHtml(out.decrypted || out.raw)}</pre>`}
+        <details class="scan-details">
+          <summary>Show raw QR data</summary>
+          <pre class="scan-text">${escapeHtml(out.raw)}</pre>
+        </details>
+        <div class="scan-actions">
+          <button class="primary-btn" id="scanAgainBtn">Scan Again</button>
+          <button class="primary-btn secondary" id="scanCopyBtn">Copy</button>
+        </div>
+      `;
+      if (statusEl) statusEl.textContent = "QR detected.";
+      document.getElementById("scanAgainBtn").addEventListener("click", () => renderScan());
+      document.getElementById("scanCopyBtn").addEventListener("click", async () => {
+        const txt = isEtms ? JSON.stringify(out.parsed, null, 2) : (out.decrypted || out.raw);
+        try { await navigator.clipboard.writeText(txt); showToast("Copied"); }
+        catch { showToast("Copy failed"); }
+      });
+    }
   }
 
   function renderHome() {
