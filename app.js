@@ -1,6 +1,32 @@
 (function () {
-  const cfg = window.BusPassConfig;
   const I = window.Icons;
+  const STORAGE_KEY = "buspass.config.overrides.v1";
+
+  // Deep-merge user overrides from localStorage on top of defaults
+  function deepMerge(target, source) {
+    if (!source || typeof source !== "object") return target;
+    for (const k of Object.keys(source)) {
+      if (source[k] && typeof source[k] === "object" && !Array.isArray(source[k])) {
+        target[k] = deepMerge({ ...(target[k] || {}) }, source[k]);
+      } else {
+        target[k] = source[k];
+      }
+    }
+    return target;
+  }
+  function loadOverrides() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch { return {}; }
+  }
+  function saveOverrides(o) { localStorage.setItem(STORAGE_KEY, JSON.stringify(o)); }
+  function resetOverrides() { localStorage.removeItem(STORAGE_KEY); }
+
+  const cfg = deepMerge(
+    JSON.parse(JSON.stringify(window.BusPassConfig)),
+    loadOverrides()
+  );
+  // expose for inspection in devtools
+  window._cfg = cfg;
 
   // ============ AES-128-CBC/PKCS5Padding (matches eTMS APK) ============
   const enc = new TextEncoder();
@@ -44,27 +70,29 @@
 
   // ============ Router ============
   const routes = {
+    "#/home":       renderHome,
     "#/view-pass":  renderViewPass,
     "#/upcoming":   renderUpcoming,
     "#/history":    renderHistory,
     "#/renew":      renderRenew,
     "#/edit":       () => renderTripTypeChooser("Edit Bus Pass"),
     "#/apply":      () => renderTripTypeChooser("Apply Bus Pass"),
-    "#/settings":   () => renderPlaceholder("Settings", "Settings screen"),
+    "#/settings":   renderSettings,
     "#/logout":     handleLogout
   };
 
   function navigate(hash) {
-    if (!routes[hash]) hash = "#/view-pass";
+    if (!routes[hash]) hash = "#/home";
     closeDrawer();
     window.location.hash = hash;
   }
 
   function onRouteChange() {
-    const hash = window.location.hash || "#/view-pass";
-    const fn = routes[hash] || renderViewPass;
+    const hash = window.location.hash || "#/home";
+    const fn = routes[hash] || renderHome;
     const v = document.getElementById("view");
     v.className = "view " + (hash === "#/view-pass" ? "fit-screen" : "scrollable");
+    document.body.classList.toggle("no-topbar", hash === "#/home");
     fn();
     highlightDrawerActive(hash);
     v.scrollTop = 0;
@@ -77,7 +105,7 @@
     const bell = document.getElementById("topBellBtn");
     title.textContent = opts.title;
     left.innerHTML = opts.back ? I.back : I.menu;
-    left.onclick = opts.back ? () => history.length > 1 ? history.back() : navigate("#/view-pass")
+    left.onclick = opts.back ? () => history.length > 1 ? history.back() : navigate("#/home")
                              : openDrawer;
     bell.hidden = !opts.bell;
     if (opts.bell) {
@@ -341,6 +369,139 @@
     });
   }
 
+  function renderHome() {
+    // No toolbar on OptionActivity in the original APK — hide it on home.
+    document.body.classList.add("no-topbar");
+    const v = document.getElementById("view");
+    const tiles = cfg.homeTiles || [];
+    v.innerHTML = `
+      <div class="home-bg">
+        <div class="home-headers">
+          <h2 class="home-welcome">Welcome To</h2>
+          <h1 class="home-app">TCS eTMS</h1>
+          <p class="home-prompt">PLEASE SELECT YOUR SERVICE</p>
+        </div>
+        <div class="home-tiles-list">
+          ${tiles.map(t => `
+            <button class="home-tile ${t.active ? '' : 'inactive'}" data-route="${t.route}" data-label="${t.label}">
+              <span class="home-tile-icon">${I[t.icon] || I.tileBuspass}</span>
+              <span class="home-tile-label">${t.label}</span>
+            </button>
+          `).join("")}
+          <button class="home-tile home-tile-settings" data-route="#/settings" data-label="Settings">
+            <span class="home-tile-icon">${I.tileSettings}</span>
+            <span class="home-tile-label">Settings</span>
+          </button>
+        </div>
+      </div>
+    `;
+    v.querySelectorAll(".home-tile").forEach(t => {
+      t.addEventListener("click", () => {
+        const r = t.getAttribute("data-route");
+        const lbl = t.getAttribute("data-label");
+        if (r) navigate(r);
+        else showToast(`${lbl} — coming soon`);
+      });
+    });
+  }
+
+  // ============ Settings (editable config with localStorage persistence) ============
+  // Schema describes which fields are editable, their group label, input type
+  const SETTINGS_SCHEMA = [
+    { group: "Branding", fields: [
+      { path: "branding.appName",  label: "App Title",  type: "text" }
+    ]},
+    { group: "Employee", fields: [
+      { path: "employee.name",     label: "Name",        type: "text" },
+      { path: "employee.empCode",  label: "Employee Code", type: "text" },
+      { path: "employee.empId",    label: "Employee Id", type: "text" }
+    ]},
+    { group: "Current Bus Pass", fields: [
+      { path: "currentPass.from",            label: "From (Bus Stop)",    type: "text" },
+      { path: "currentPass.to",              label: "To (Facility)",       type: "text" },
+      { path: "currentPass.busStopName",     label: "Bus Stop Name",       type: "text" },
+      { path: "currentPass.pickTiming",      label: "Office In Time",      type: "text" },
+      { path: "currentPass.dropTiming",      label: "Office Out Time",     type: "text" },
+      { path: "currentPass.startDate",       label: "Start Date",          type: "text" },
+      { path: "currentPass.endDate",         label: "End Date",            type: "text" },
+      { path: "currentPass.routeTypeLabel",  label: "Route Type Label",    type: "text" },
+      { path: "currentPass.routeName",       label: "Route Description",   type: "text" },
+      { path: "currentPass.tripType",        label: "Trip Type Code (P/D/B)", type: "text" },
+      { path: "currentPass.busPassType",     label: "Pass Type Code",      type: "text" },
+      { path: "currentPass.requestId",       label: "Request Id",          type: "number" },
+      { path: "currentPass.routeId",         label: "Route Id",            type: "text" },
+      { path: "currentPass.busManagementId", label: "Bus Management Id",   type: "number" }
+    ]},
+    { group: "QR Encryption (eTMS hardcoded)", fields: [
+      { path: "qrCrypto.key", label: "AES Key (16 bytes)", type: "text" },
+      { path: "qrCrypto.iv",  label: "AES IV (16 bytes)",  type: "text" }
+    ]}
+  ];
+
+  function getByPath(obj, p) { return p.split(".").reduce((a, k) => a == null ? a : a[k], obj); }
+  function setByPath(obj, p, val) {
+    const keys = p.split(".");
+    let cur = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (cur[keys[i]] == null || typeof cur[keys[i]] !== "object") cur[keys[i]] = {};
+      cur = cur[keys[i]];
+    }
+    cur[keys[keys.length - 1]] = val;
+  }
+
+  function renderSettings() {
+    setTopBar({ title: "Settings", back: true });
+    const v = document.getElementById("view");
+    v.innerHTML = `
+      <form id="settingsForm" class="settings-form" autocomplete="off">
+        ${SETTINGS_SCHEMA.map(group => `
+          <fieldset class="settings-group">
+            <legend>${group.group}</legend>
+            ${group.fields.map(f => {
+              const val = getByPath(cfg, f.path);
+              return `
+                <label class="settings-field">
+                  <span class="settings-label">${f.label}</span>
+                  <input class="settings-input"
+                         name="${f.path}"
+                         type="${f.type}"
+                         value="${val == null ? "" : String(val).replace(/"/g, "&quot;")}" />
+                </label>
+              `;
+            }).join("")}
+          </fieldset>
+        `).join("")}
+
+        <div class="settings-actions">
+          <button type="button" class="primary-btn settings-reset" id="settingsReset">Reset to Defaults</button>
+          <button type="submit" class="primary-btn settings-save">Save Changes</button>
+        </div>
+      </form>
+    `;
+
+    document.getElementById("settingsForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const overrides = loadOverrides();
+      [...form.querySelectorAll(".settings-input")].forEach(inp => {
+        let val = inp.value;
+        if (inp.type === "number" && val !== "") val = Number(val);
+        setByPath(overrides, inp.name, val);
+        setByPath(cfg, inp.name, val);
+      });
+      saveOverrides(overrides);
+      showToast("Settings saved");
+      // refresh drawer name + any open data
+      document.getElementById("drawerName").textContent = cfg.employee.name;
+    });
+
+    document.getElementById("settingsReset").addEventListener("click", () => {
+      resetOverrides();
+      showToast("Reset — reloading defaults");
+      setTimeout(() => window.location.reload(), 500);
+    });
+  }
+
   function renderPlaceholder(title, body) {
     setTopBar({ title, back: true });
     document.getElementById("view").innerHTML = `<div class="placeholder">${body}</div>`;
@@ -449,7 +610,7 @@
     buildDrawer();
     document.getElementById("scrim").addEventListener("click", closeDrawer);
     window.addEventListener("hashchange", onRouteChange);
-    if (!window.location.hash) window.location.hash = "#/view-pass";
+    if (!window.location.hash) window.location.hash = "#/home";
     onRouteChange();
 
     if ("serviceWorker" in navigator) {

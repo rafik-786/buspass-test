@@ -1,4 +1,4 @@
-const CACHE = "buspass-v1";
+const CACHE = "buspass-v4";
 const SHELL = [
   "./",
   "./index.html",

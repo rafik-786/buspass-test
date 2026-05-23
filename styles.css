@@ -587,6 +587,155 @@ img, svg { display: block; }
 }
 .toast.show { opacity: 0.95; transform: translateX(-50%) translateY(0); }
 
+/* ===== Home (OptionActivity) — exact APK layout =====
+   Background gradient: #6835c6 → #394ef0 at angle=90 (bottom→top in Android)
+   Headers: "Welcome To" 24sp, "TCS eTMS" 32sp bold, "PLEASE SELECT YOUR SERVICE" 18sp bold
+   Each card: marginStart=54dp, height=100dp, cardCornerRadius=5dp, cardElevation=25dp,
+   background = #2c256b with 2dp white stroke and topLeftRadius=120dp, bottomLeftRadius=120dp
+   Icon: 62dp, marginStart=41dp; Label: 20sp bold white, marginStart=16dp */
+body.no-topbar .topbar { display: none; }
+
+.home-bg {
+  min-height: 100%;
+  flex: 1 1 auto;
+  background: linear-gradient(to top, #6835c6 0%, #394ef0 100%);
+  padding: 24px 0 32px;
+  display: flex;
+  flex-direction: column;
+  padding-top: calc(24px + env(safe-area-inset-top, 0));
+}
+.home-headers {
+  text-align: center;
+  padding: 0 16px;
+  color: #ffffff;
+}
+.home-welcome {
+  font-size: 24px;
+  font-weight: 400;
+  color: #ffffff;
+  margin-top: 24px;
+}
+.home-app {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 16px;
+}
+.home-prompt {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 16px;
+}
+
+.home-tiles-list {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.home-tile {
+  margin-left: 54px;
+  height: 100px;
+  background: #2c256b;
+  border: 2px solid #ffffff;
+  /* D-shape: rounded left (120dp), almost flat right (CardView cornerRadius=5dp) */
+  border-top-left-radius: 120px;
+  border-bottom-left-radius: 120px;
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
+  display: flex;
+  align-items: center;
+  padding: 5px 0 5px 5px;
+  /* cardElevation=25dp — deep shadow */
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  text-align: left;
+  font-family: "Roboto", sans-serif;
+  transition: transform 0.1s ease;
+}
+.home-tile:active { transform: scale(0.98); }
+.home-tile.inactive { opacity: 0.65; }
+.home-tile-icon {
+  width: 62px;
+  height: 62px;
+  margin-left: 41px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.home-tile-label {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-left: 16px;
+  flex: 1;
+}
+
+/* Settings tile is the same shape (added for our PWA) */
+.home-tile-settings { /* identical styling, separate class for future tweaks */ }
+
+/* ===== Settings form ===== */
+.settings-form { padding: 12px 14px 24px; }
+.settings-group {
+  border: none;
+  margin-bottom: 14px;
+  background: #fff;
+  border-radius: 7px;
+  padding: 14px 14px 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.06);
+}
+.settings-group legend {
+  font-size: 13px;
+  font-weight: 700;
+  color: #492094;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0 6px;
+}
+.settings-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.settings-label {
+  display: block;
+  font-size: 12px;
+  color: #757575;
+  margin-bottom: 4px;
+}
+.settings-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #c5c5c5;
+  background: transparent;
+  padding: 8px 0;
+  font-size: 16px;
+  color: #1d1d1d;
+  font-family: "Roboto", sans-serif;
+  outline: none;
+}
+.settings-input:focus {
+  border-bottom-color: #482093;
+}
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.settings-actions .primary-btn {
+  flex: 1;
+  margin: 0;
+  width: auto;
+}
+.settings-reset {
+  background: #fff;
+  color: #482093;
+  border: 1px solid #482093;
+}
+.settings-reset:active { background: #f6efff; }
+
 /* ===== Placeholder pages ===== */
 .placeholder {
   padding: 40px 24px;

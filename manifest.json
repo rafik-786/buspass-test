@@ -1,7 +1,7 @@
 {
-  "name": "eTMS Digital Bus Pass",
-  "short_name": "Bus Pass",
-  "description": "TCS eTMS digital bus pass — view QR, manage upcoming passes, history and renewals.",
+  "name": "eTMS",
+  "short_name": "eTMS",
+  "description": "TCS eTMS — Enterprise Transport Management System.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
