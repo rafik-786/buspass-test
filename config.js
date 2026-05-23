@@ -24,9 +24,8 @@ window.BusPassConfig = {
 
   homeTiles: [
     { key: "buspass", label: "Bus Services",     route: "#/view-pass", icon: "tileBuspass", active: true  },
-    { key: "scan",    label: "Scan QR",          route: "#/scan",      icon: "tileScan",    active: true  },
-    { key: "cab",     label: "Cab Services",     route: "",            icon: "tileCab",     active: false },
-    { key: "geocode", label: "Geocode Yourself", route: "",            icon: "tileGeocode", active: false }
+    { key: "cab",     label: "Cab Services",     route: "",            icon: "tileCab",     active: true },
+    { key: "geocode", label: "Geocode Yourself", route: "",            icon: "tileGeocode", active: true }
   ],
 
   employee: {
